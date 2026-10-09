@@ -1,0 +1,64 @@
+### Variables
+@baseUrl = http://localhost:3000
+
+### 1. Obtener todas las personas (incluye precarga inicial)
+GET {{baseUrl}}/personas
+
+### 2. Crear una persona (zona horaria por defecto: America/Argentina/Buenos_Aires)
+# @name crearPersona
+POST {{baseUrl}}/personas
+Content-Type: application/json
+
+{
+  "nombre": "Carlos Tevez",
+  "alias": "apache_10",
+  "email": "carlos.tevez@ejemplo.com"
+}
+
+### 3. Crear una persona con zona horaria explícita
+POST {{baseUrl}}/personas
+Content-Type: application/json
+
+{
+  "nombre": "Lionel Messi",
+  "alias": "la_pulga",
+  "email": "leo.messi@ejemplo.com",
+  "zonaHoraria": "America/New_York"
+}
+
+### 4. Error 409 (Conflicto por alias o email duplicado)
+POST {{baseUrl}}/personas
+Content-Type: application/json
+
+{
+  "nombre": "Otro Carlos",
+  "alias": "apache_10",
+  "email": "otro.carlos@ejemplo.com"
+}
+
+### 5. Error 400 (Validación: email inválido o alias con caracteres no permitidos)
+POST {{baseUrl}}/personas
+Content-Type: application/json
+
+{
+  "nombre": "Usuario Invalido",
+  "alias": "user@invalido!",
+  "email": "no-es-un-email"
+}
+
+### 6. Consultar una persona por ID (reemplazar con un id real)
+@personaId = {{crearPersona.response.body.id}}
+GET {{baseUrl}}/personas/{{personaId}}
+
+### 7. Modificar nombre y zona horaria (recalcula la fecha calendario en su nueva zona)
+PATCH {{baseUrl}}/personas/{{personaId}}
+Content-Type: application/json
+
+{
+  "nombre": "Carlos Alberto Tevez",
+  "zonaHoraria": "Europe/Madrid"
+}
+
+### 8. Eliminar una persona por ID
+DELETE {{baseUrl}}/personas/{{personaId}}
+
