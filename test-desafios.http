@@ -1,0 +1,362 @@
+### Variables
+@baseUrl = http://localhost:3000
+
+### 1. Crear la persona que será creadora del desafío
+# Nota: si ya existe (409 por alias/email duplicado), tomá su id desde GET /personas.
+# @name crearCreador
+POST {{baseUrl}}/personas
+Content-Type: application/json
+
+{
+  "nombre": "Ana Desafíos",
+  "alias": "ana_desafios",
+  "email": "ana.desafios@ejemplo.com"
+}
+
+@creadorId = {{crearCreador.response.body.id}}
+
+### 2. Crear un desafío (el servidor genera el código de invitación)
+# Nota: usá fechas futuras; el desafío no puede empezar en el pasado
+# y debe durar entre 3 y 90 días inclusive.
+# @name crearDesafio
+POST {{baseUrl}}/desafios
+Content-Type: application/json
+
+{
+  "creadorId": "{{creadorId}}",
+  "nombre": "Caminar 30 minutos por día",
+  "descripcion": "Meta diaria de actividad física",
+  "categoria": "SALUD",
+  "fechaInicio": "2026-11-02",
+  "fechaFin": "2026-11-30",
+  "maxParticipantes": 8
+}
+
+@desafioId = {{crearDesafio.response.body.id}}
+@codigo = {{crearDesafio.response.body.codigoInvitacion}}
+
+### 3. Crear un desafío con el máximo por defecto (10 participantes)
+POST {{baseUrl}}/desafios
+Content-Type: application/json
+
+{
+  "creadorId": "{{creadorId}}",
+  "nombre": "Leer un libro por semana",
+  "categoria": "ESTUDIO",
+  "fechaInicio": "2026-11-02",
+  "fechaFin": "2026-11-20"
+}
+
+### 4. Error 400 (la fecha de inicio ya pasó)
+POST {{baseUrl}}/desafios
+Content-Type: application/json
+
+{
+  "creadorId": "{{creadorId}}",
+  "nombre": "Desafío con inicio en el pasado",
+  "categoria": "OTRO",
+  "fechaInicio": "2020-01-01",
+  "fechaFin": "2020-01-31"
+}
+
+### 5. Error 400 (dura menos de 3 días: 1 y 2 de noviembre son 2 días)
+POST {{baseUrl}}/desafios
+Content-Type: application/json
+
+{
+  "creadorId": "{{creadorId}}",
+  "nombre": "Desafío demasiado corto",
+  "categoria": "BIENESTAR",
+  "fechaInicio": "2026-11-01",
+  "fechaFin": "2026-11-02"
+}
+
+### 6. Error 400 (categoría inválida y máximo fuera de rango)
+POST {{baseUrl}}/desafios
+Content-Type: application/json
+
+{
+  "creadorId": "{{creadorId}}",
+  "nombre": "Desafío inválido",
+  "categoria": "DEPORTES",
+  "fechaInicio": "2026-11-01",
+  "fechaFin": "2026-11-10",
+  "maxParticipantes": 21
+}
+
+### 7. Error 404 (el creador no existe)
+POST {{baseUrl}}/desafios
+Content-Type: application/json
+
+{
+  "creadorId": "000000000000000000000000",
+  "nombre": "Desafío sin creador",
+  "categoria": "FINANZAS",
+  "fechaInicio": "2026-11-01",
+  "fechaFin": "2026-11-10"
+}
+
+### 8. Listar todos los desafíos
+GET {{baseUrl}}/desafios
+
+### 9. Consultar un desafío por id (muestra el estado calculado: PROGRAMADO / ACTIVO / FINALIZADO / CANCELADO)
+GET {{baseUrl}}/desafios/{{desafioId}}
+
+### 10. Consultar un desafío por su código de invitación
+GET {{baseUrl}}/desafios/codigo/{{codigo}}
+
+### 11. Error 400 (código con formato inválido)
+GET {{baseUrl}}/desafios/codigo/ABC
+
+### 12. Modificar nombre y descripción (permitido mientras no esté FINALIZADO ni CANCELADO)
+PATCH {{baseUrl}}/desafios/{{desafioId}}
+Content-Type: application/json
+
+{
+  "creadorId": "{{creadorId}}",
+  "nombre": "Caminar 40 minutos por día",
+  "descripcion": "Meta diaria de actividad física, aumentada"
+}
+
+### 13. Modificar fechas y máximo mientras esté PROGRAMADO
+PATCH {{baseUrl}}/desafios/{{desafioId}}
+Content-Type: application/json
+
+{
+  "creadorId": "{{creadorId}}",
+  "fechaInicio": "2026-11-05",
+  "fechaFin": "2026-12-05",
+  "maxParticipantes": 12
+}
+
+### 14. Error 403 (quien modifica no es el creador)
+PATCH {{baseUrl}}/desafios/{{desafioId}}
+Content-Type: application/json
+
+{
+  "creadorId": "000000000000000000000000",
+  "nombre": "Nombre que no debería guardarse"
+}
+
+### 15. Nota sobre la regla del máximo de participantes
+# El máximo nunca puede quedar por debajo de los participantes actuales (409).
+# Con el creador solo hay 1 participante y el mínimo permitido es 2,
+# así que esta regla se ejercitará cuando exista el módulo de unión de participantes.
+PATCH {{baseUrl}}/desafios/{{desafioId}}
+Content-Type: application/json
+
+{
+  "creadorId": "{{creadorId}}",
+  "maxParticipantes": 1
+}
+
+### 16. Cancelar un desafío PROGRAMADO (solo el creador)
+POST {{baseUrl}}/desafios/{{desafioId}}/cancelar
+Content-Type: application/json
+
+{
+  "creadorId": "{{creadorId}}"
+}
+
+### 17. Error 409 (un desafío CANCELADO no admite modificaciones)
+PATCH {{baseUrl}}/desafios/{{desafioId}}
+Content-Type: application/json
+
+{
+  "creadorId": "{{creadorId}}",
+  "nombre": "No debería modificarse"
+}
+
+### 18. Error 409 (un desafío CANCELADO no admite cancelarse de nuevo)
+POST {{baseUrl}}/desafios/{{desafioId}}/cancelar
+Content-Type: application/json
+
+{
+  "creadorId": "{{creadorId}}"
+}
+
+### 19. Error 403 (solo el creador puede cancelar)
+POST {{baseUrl}}/desafios/{{desafioId}}/cancelar
+Content-Type: application/json
+
+{
+  "creadorId": "000000000000000000000000"
+}
+
+### 20. Listar desafíos con filtros de estado y categoría
+GET {{baseUrl}}/desafios?estado=PROGRAMADO&categoria=SALUD
+
+### 21. Listar solo los desafíos activos
+GET {{baseUrl}}/desafios?estado=ACTIVO
+
+### 22. Error 400 (estado o categoría inválidos en el filtro)
+GET {{baseUrl}}/desafios?estado=VIGENTE&categoria=DEPORTES
+
+### 23. Crear una segunda persona que se unirá al desafío
+# @name crearParticipante
+POST {{baseUrl}}/personas
+Content-Type: application/json
+
+{
+  "nombre": "Bruno Participante",
+  "alias": "bruno_p",
+  "email": "bruno@ejemplo.com"
+}
+
+@participanteId = {{crearParticipante.response.body.id}}
+
+### 24. Unirse a un desafío con su código de invitación
+POST {{baseUrl}}/desafios/unirse
+Content-Type: application/json
+
+{
+  "codigo": "{{codigo}}",
+  "personaId": "{{participanteId}}"
+}
+
+### 25. Error 409 (no puede unirse dos veces)
+POST {{baseUrl}}/desafios/unirse
+Content-Type: application/json
+
+{
+  "codigo": "{{codigo}}",
+  "personaId": "{{participanteId}}"
+}
+
+### 26. Error 404 (el código no corresponde a ningún desafío)
+POST {{baseUrl}}/desafios/unirse
+Content-Type: application/json
+
+{
+  "codigo": "ZZZZ99",
+  "personaId": "{{participanteId}}"
+}
+
+### 27. Consultar los participantes del desafío (incluye al creador y a quien se unió)
+GET {{baseUrl}}/desafios/{{desafioId}}/participantes
+
+### 28. Listar los desafíos en los que participa una persona
+GET {{baseUrl}}/desafios/persona/{{participanteId}}
+
+### 29. Listar los desafíos que una persona creó (el creador también participa)
+GET {{baseUrl}}/desafios/persona/{{creadorId}}
+
+### 30. Abandonar un desafío (no el creador)
+POST {{baseUrl}}/desafios/{{desafioId}}/abandonar
+Content-Type: application/json
+
+{
+  "personaId": "{{participanteId}}"
+}
+
+### 31. Error 409 (quien abandonó no puede volver a unirse)
+POST {{baseUrl}}/desafios/unirse
+Content-Type: application/json
+
+{
+  "codigo": "{{codigo}}",
+  "personaId": "{{participanteId}}"
+}
+
+### 32. Error 403 (el creador no puede abandonar; debe cancelar)
+POST {{baseUrl}}/desafios/{{desafioId}}/abandonar
+Content-Type: application/json
+
+{
+  "personaId": "{{creadorId}}"
+}
+
+### 33. Error 409 (una persona que no participa no puede abandonar)
+POST {{baseUrl}}/desafios/{{desafioId}}/abandonar
+Content-Type: application/json
+
+{
+  "personaId": "000000000000000000000000"
+}
+
+### 34. Verificar que quien abandonó ya no figura en el historial de participantes
+# (debe devolver solo al creador; el abandonado quedó en `abandonados`)
+GET {{baseUrl}}/desafios/{{desafioId}}/participantes
+
+### 35. Registrar un check-in de hoy (la fecha por defecto es hoy en la zona de la persona)
+# Nota: el desafío debe estar ACTIVO (crealo con fechas que lo incluyan a hoy).
+POST {{baseUrl}}/desafios/{{desafioId}}/check-ins
+Content-Type: application/json
+
+{
+  "personaId": "{{participanteId}}",
+  "nota": "Caminé 30 minutos",
+  "valor": 30
+}
+
+### 36. Registrar el check-in de ayer (para quien se olvidó)
+POST {{baseUrl}}/desafios/{{desafioId}}/check-ins
+Content-Type: application/json
+
+{
+  "personaId": "{{creadorId}}"
+}
+
+### 37. Error 400 (fecha futura o anterior a ayer)
+POST {{baseUrl}}/desafios/{{desafioId}}/check-ins
+Content-Type: application/json
+
+{
+  "personaId": "{{participanteId}}",
+  "fecha": "2020-01-01"
+}
+
+### 38. Error 409 (un único check-in por persona, desafío y día)
+POST {{baseUrl}}/desafios/{{desafioId}}/check-ins
+Content-Type: application/json
+
+{
+  "personaId": "{{participanteId}}"
+}
+
+### 39. Error 403 (solo los participantes pueden registrar check-ins)
+POST {{baseUrl}}/desafios/{{desafioId}}/check-ins
+Content-Type: application/json
+
+{
+  "personaId": "000000000000000000000000"
+}
+
+### 40. Listar los check-ins de una persona en el desafío (ordenados por fecha)
+GET {{baseUrl}}/desafios/{{desafioId}}/check-ins?personaId={{participanteId}}
+
+### 41. Deshacer el último check-in propio (solo si es de hoy)
+DELETE {{baseUrl}}/desafios/{{desafioId}}/check-ins/ultimo
+Content-Type: application/json
+
+{
+  "personaId": "{{participanteId}}"
+}
+
+### 42. Error 404 (ya no le quedan check-ins en el desafío)
+DELETE {{baseUrl}}/desafios/{{desafioId}}/check-ins/ultimo
+Content-Type: application/json
+
+{
+  "personaId": "{{participanteId}}"
+}
+
+### 43. Nota sobre "solo si es de hoy"
+# El check-in de ayer registrado en el punto 36 NO se puede deshacer:
+# el último de {{creadorId}} es del día de ayer → 409.
+DELETE {{baseUrl}}/desafios/{{desafioId}}/check-ins/ultimo
+Content-Type: application/json
+
+{
+  "personaId": "{{creadorId}}"
+}
+
+### 44. Error 409 (no se pueden registrar check-ins en un desafío que no esté ACTIVO)
+# Usar un desafío PROGRAMADO o CANCELADO (por ejemplo, el cancelado en el punto 16).
+POST {{baseUrl}}/desafios/{{desafioId}}/check-ins
+Content-Type: application/json
+
+{
+  "personaId": "{{participanteId}}",
+  "nota": "No debería registrarse"
+}

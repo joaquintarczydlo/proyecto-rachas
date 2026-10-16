@@ -3,6 +3,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { CheckInsModule } from './check-ins/check-ins.module';
+import { DesafiosModule } from './desafios/desafios.module';
 import { PersonasModule } from './personas/personas.module';
 
 @Module({
@@ -15,6 +17,8 @@ import { PersonasModule } from './personas/personas.module';
       }),
     }),
     PersonasModule,
+    DesafiosModule,
+    CheckInsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
