@@ -48,7 +48,6 @@ export class DesafiosController {
     return this.desafiosService.findByCodigo(codigo);
   }
 
-
   @Get(':id/participantes')
   findParticipantes(@Param('id') id: string) {
     return this.desafiosService.findParticipantes(id);

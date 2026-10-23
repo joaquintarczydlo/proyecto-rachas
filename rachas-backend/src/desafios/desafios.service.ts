@@ -303,9 +303,8 @@ export class DesafiosService {
    */
   async unirse(unirseDesafioDto: UnirseDesafioDto): Promise<DesafioDocument> {
     const codigo = unirseDesafioDto.codigo.trim().toUpperCase();
-    const desafio = await this.desafioModel
-      .findOne({ codigoInvitacion: codigo })
-      .exec();
+    const desafio = await this.desafioModel.findOne({ codigoInvitacion: codigo }).exec();
+    
     if (!desafio) {
       throw new NotFoundException(
         `No se encontró ningún desafío con el código '${codigo}'`,

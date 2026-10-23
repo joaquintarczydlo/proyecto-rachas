@@ -94,4 +94,3 @@ DesafioSchema.virtual('estado').get(function (this: Desafio): EstadoDesafio {
   return calcularEstadoDesafio(this);
 });
 
-DesafioSchema.index({ codigoInvitacion: 1 }, { unique: true });
