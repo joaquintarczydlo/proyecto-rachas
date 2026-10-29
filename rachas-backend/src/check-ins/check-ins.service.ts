@@ -96,7 +96,7 @@ export class CheckInsService {
       .exec();
     if (existente) {
       throw new ConflictException(
-        `Ya existe un check-in de la persona para el día ${fecha}`,
+        `Ya existe un check-in de ${persona.nombre} para el día ${fecha}`,
       );
     }
 

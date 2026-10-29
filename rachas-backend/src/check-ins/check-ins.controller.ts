@@ -19,7 +19,7 @@ import { ListarCheckInsQueryDto } from './dto/listar-check-ins.query.dto';
  * `/desafios/:desafioId/check-ins`. Vive en CheckInsModule para no generar
  * una dependencia circular con DesafiosModule.
  */
-@Controller('desafios/:desafioId/check-ins')
+@Controller('desafios/:desafioId/check-in')
 export class CheckInsController {
   constructor(private readonly checkInsService: CheckInsService) {}
 
