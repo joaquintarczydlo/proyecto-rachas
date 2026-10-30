@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { DesafiosModule } from '../desafios/desafios.module';
 import { PersonasModule } from '../personas/personas.module';
@@ -8,12 +8,14 @@ import { CheckIn, CheckInSchema } from './schemas/check-in.schema';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: CheckIn.name, schema: CheckInSchema }]),
-    DesafiosModule,
+    MongooseModule.forFeature([
+      { name: CheckIn.name, schema: CheckInSchema },
+    ]),
+    forwardRef(() => DesafiosModule),
     PersonasModule,
   ],
-  controllers: [CheckInsController],
   providers: [CheckInsService],
+  controllers: [CheckInsController],
   exports: [CheckInsService],
 })
 export class CheckInsModule {}

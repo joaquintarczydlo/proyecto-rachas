@@ -37,7 +37,19 @@ export class CheckInsController {
     @Param('desafioId') desafioId: string,
     @Query() filtro: ListarCheckInsQueryDto,
   ) {
-    return this.checkInsService.findByPersona(desafioId, filtro.personaId);
+    return this.checkInsService.findByPersona(desafioId, filtro);
+  }
+
+  /**
+   * Consulta la racha actual y la mejor racha de una persona en este desafío.
+   * `GET /desafios/:desafioId/check-ins/racha?personaId=...`
+   */
+  @Get('racha')
+  racha(
+    @Param('desafioId') desafioId: string,
+    @Query() filtro: ListarCheckInsQueryDto,
+  ) {
+    return this.checkInsService.obtenerRacha(desafioId, filtro.personaId);
   }
 
   @HttpCode(HttpStatus.OK)

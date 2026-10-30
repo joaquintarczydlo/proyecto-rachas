@@ -690,7 +690,7 @@ describe('DesafiosService', () => {
       });
 
       const error = await capturarError(
-        service.abandonar(idDesafio, { creadorId }),
+        service.abandonar(idDesafio, { personaId: creadorId }),
       );
 
       expect(error).toBeInstanceOf(ForbiddenException);

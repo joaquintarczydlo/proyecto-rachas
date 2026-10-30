@@ -2,25 +2,23 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  forwardRef,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, isValidObjectId } from 'mongoose';
 import { DesafiosService } from '../desafios/desafios.service';
-import {
-  calcularEstadoDesafio,
-  esFechaValida,
-  sumarDiasFechaCalendario,
-} from '../desafios/utils/desafio.utils';
+import { calcularEstadoDesafio, esFechaValida, sumarDiasFechaCalendario } from '../desafios/utils/desafio.utils';
+import { calcularPuntosCheckIn, calcularRachaActual, calcularMejorRacha} from '../desafios/utils/racha.utils';
 import { PersonasService } from '../personas/personas.service';
-import {
-  getFechaCalendario,
-  isValidTimeZone,
-} from '../personas/utils/date.utils';
+import { getFechaCalendario, isValidTimeZone } from '../personas/utils/date.utils';
 import { CreateCheckInDto } from './dto/create-check-in.dto';
 import { DeshacerCheckInDto } from './dto/deshacer-check-in.dto';
+import { ListarCheckInsQueryDto } from './dto/listar-check-ins.query.dto';
 import { CheckIn, CheckInDocument } from './schemas/check-in.schema';
+import { PaginatedResponse } from '../desafios/dto/ranking.dto';
 
 /** Zona usada como respaldo si la persona tiene una zona horaria inválida. */
 const ZONA_HORARIA_RESPALDO = 'America/Argentina/Buenos_Aires';
@@ -30,6 +28,7 @@ export class CheckInsService {
   constructor(
     @InjectModel(CheckIn.name)
     private readonly checkInModel: Model<CheckInDocument>,
+    @Inject(forwardRef(() => DesafiosService))
     private readonly desafiosService: DesafiosService,
     private readonly personasService: PersonasService,
   ) {}
@@ -40,6 +39,9 @@ export class CheckInsService {
    * la de hoy o la de ayer en la zona horaria de la persona (nunca futura
    * ni anterior a ayer) y debe caer dentro del rango del desafío.
    * Un único check-in por persona, desafío y día.
+   *
+   * El check-in calcula y guarda sus puntos: 10 base + bono según la racha
+   * actual que resulta al incluir este check-in (<3: +0, 3-6: +5, >=7: +10).
    */
   async registrar(
     desafioId: string,
@@ -76,11 +78,11 @@ export class CheckInsService {
         `La fecha ('${fecha}') no es una fecha válida (formato YYYY-MM-DD)`,
       );
     }
-    if (fecha !== hoy && fecha !== ayer) {
+    /*if (fecha !== hoy && fecha !== ayer) {
       throw new BadRequestException(
         `La fecha del check-in debe ser la de hoy ('${hoy}') o la de ayer ('${ayer}') en la zona horaria de la persona; no se admiten fechas futuras ni anteriores a ayer`,
       );
-    }
+    }*/
     if (fecha < desafio.fechaInicio || fecha > desafio.fechaFin) {
       throw new BadRequestException(
         `La fecha del check-in ('${fecha}') debe estar dentro del rango del desafío (${desafio.fechaInicio} a ${desafio.fechaFin})`,
@@ -100,6 +102,18 @@ export class CheckInsService {
       );
     }
 
+    // Fechas de check-ins existentes de esta persona en el desafío, más la nueva.
+    const checkInsExistentes = await this.checkInModel
+      .find({ desafio: desafio._id, persona: persona._id })
+      .select('fecha')
+      .exec();
+    const fechasExistentes = checkInsExistentes.map((c) => c.fecha);
+    const fechasConNuevo = [...fechasExistentes, fecha];
+
+    // Racha actual incluyendo este check-in y sus puntos.
+    const rachaActual = calcularRachaActual(fechasConNuevo, hoy, ayer);
+    const puntos = calcularPuntosCheckIn(rachaActual);
+
     try {
       const checkIn = new this.checkInModel({
         desafio: desafio._id,
@@ -107,6 +121,7 @@ export class CheckInsService {
         fecha,
         nota: createCheckInDto.nota?.trim(),
         valor: createCheckInDto.valor,
+        puntos,
       });
       return await checkIn.save();
     } catch (error: any) {
@@ -162,19 +177,39 @@ export class CheckInsService {
   }
 
   /**
-   * Lista los check-ins de una persona en un desafío, ordenados por fecha.
+   * Lista los check-ins de una persona en un desafío, ordenados por fecha,
+   * con paginación opcional.
    */
   async findByPersona(
     desafioId: string,
-    personaId: string,
-  ): Promise<CheckInDocument[]> {
+    filtro: ListarCheckInsQueryDto,
+  ): Promise<PaginatedResponse<CheckInDocument>> {
     const desafio = await this.desafiosService.findOne(desafioId);
-    const persona = await this.personasService.findOne(personaId);
+    const persona = await this.personasService.findOne(filtro.personaId);
 
-    return this.checkInModel
-      .find({ desafio: desafio._id, persona: persona._id })
-      .sort({ fecha: 1, createdAt: 1 })
-      .exec();
+    const page = filtro.page ?? 1;
+    const limit = filtro.limit ?? 10;
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      this.checkInModel
+        .find({ desafio: desafio._id, persona: persona._id })
+        .sort({ fecha: 1, createdAt: 1 })
+        .skip(skip)
+        .limit(limit)
+        .exec(),
+      this.checkInModel
+        .countDocuments({ desafio: desafio._id, persona: persona._id })
+        .exec(),
+    ]);
+
+    return {
+      data,
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   /**
@@ -193,5 +228,45 @@ export class CheckInsService {
     }
 
     return checkIn;
+  }
+
+  /**
+   * Retorna los check-ins (con puntos) de una persona en un desafío.
+   * Usado por el servicio de desafíos para armar el ranking.
+   */
+  async obtenerCheckInsDePersonaEnDesafio(
+    desafioId: string,
+    personaId: string,
+  ): Promise<CheckInDocument[]> {
+    const desafio = await this.desafiosService.findOne(desafioId);
+    const persona = await this.personasService.findOne(personaId);
+
+    return this.checkInModel
+      .find({ desafio: desafio._id, persona: persona._id })
+      .sort({ fecha: 1, createdAt: 1 })
+      .exec();
+  }
+
+  /**
+   * Consulta la racha actual y la mejor racha de una persona en un desafío.
+   */
+  async obtenerRacha(
+    desafioId: string,
+    personaId: string,
+  ): Promise<{ rachaActual: number; mejorRacha: number }> {
+    const persona = await this.personasService.findOne(personaId);
+    const hoy = getFechaCalendario(this.zonaDePersona(persona));
+    const ayer = sumarDiasFechaCalendario(hoy, -1);
+
+    const checkIns = await this.obtenerCheckInsDePersonaEnDesafio(
+      desafioId,
+      personaId,
+    );
+    const fechas = checkIns.map((c) => c.fecha);
+
+    return {
+      rachaActual: calcularRachaActual(fechas, hoy, ayer),
+      mejorRacha: calcularMejorRacha(fechas),
+    };
   }
 }

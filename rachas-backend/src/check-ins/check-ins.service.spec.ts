@@ -282,7 +282,7 @@ describe('CheckInsService', () => {
 
       const resultado = await service.findByPersona(
         idDesafio,
-        personaOid.toString(),
+        { personaId: personaOid.toString() },
       );
 
       expect(checkInModelMock.find).toHaveBeenCalledWith({
@@ -298,7 +298,9 @@ describe('CheckInsService', () => {
         new NotFoundException('No se encontró ningún desafío'),
       );
       await expect(
-        service.findByPersona(idDesafio, personaOid.toString()),
+        service.findByPersona(idDesafio, {
+          personaId: personaOid.toString(),
+        }),
       ).rejects.toBeInstanceOf(NotFoundException);
 
       desafiosServiceMock.findOne.mockResolvedValue(crearDesafioActivo());
@@ -306,7 +308,9 @@ describe('CheckInsService', () => {
         new NotFoundException('No se encontró ninguna persona'),
       );
       await expect(
-        service.findByPersona(idDesafio, personaOid.toString()),
+        service.findByPersona(idDesafio, {
+          personaId: personaOid.toString(),
+        }),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
   });

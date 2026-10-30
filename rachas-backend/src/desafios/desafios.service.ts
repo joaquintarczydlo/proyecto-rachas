@@ -3,17 +3,29 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Inject,
+  forwardRef,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, isValidObjectId } from 'mongoose';
 import { PersonasService } from '../personas/personas.service';
+import { CheckInsService } from '../check-ins/check-ins.service';
+import {
+  getFechaCalendario,
+  isValidTimeZone,
+} from '../personas/utils/date.utils';
 import { AbandonarDesafioDto } from './dto/abandonar-desafio.dto';
 import { CancelarDesafioDto } from './dto/cancelar-desafio.dto';
 import { CreateDesafioDto } from './dto/create-desafio.dto';
 import { ListarDesafiosQueryDto } from './dto/listar-desafios.query.dto';
 import { UnirseDesafioDto } from './dto/unirse-desafio.dto';
 import { UpdateDesafioDto } from './dto/update-desafio.dto';
+import {
+  PaginatedResponse,
+  RankingItem,
+  ResumenInicioItem,
+} from './dto/ranking.dto';
 import { Desafio, DesafioDocument } from './schemas/desafio.schema';
 import {
   LIMITE_DESAFIOS_VIGENTES,
@@ -23,8 +35,10 @@ import {
   filtroDesafiosVigentesDePersona,
   generarCodigoInvitacion,
   getHoyDesafio,
+  sumarDiasFechaCalendario,
   validarRangoFechas,
 } from './utils/desafio.utils';
+import { calcularRachaActual } from './utils/racha.utils';
 
 /** Cantidad de códigos de invitación a intentar antes de rendirse ante colisiones. */
 const MAX_INTENTOS_CODIGO = 5;
@@ -35,6 +49,8 @@ export class DesafiosService {
     @InjectModel(Desafio.name)
     private readonly desafioModel: Model<DesafioDocument>,
     private readonly personasService: PersonasService,
+    @Inject(forwardRef(() => CheckInsService))
+    private readonly checkInsService: CheckInsService,
   ) {}
 
   /**
@@ -112,10 +128,13 @@ export class DesafiosService {
   }
 
   /**
-   * Retorna los desafíos, opcionalmente filtrados por estado y categoría.
-   * Como el estado se calcula, se traduce a criterios de fechas en la consulta.
+   * Retorna los desafíos, opcionalmente filtrados por estado y categoría,
+   * con paginación. Como el estado se calcula, se traduce a criterios de
+   * fechas en la consulta.
    */
-  async findAll(filtro?: ListarDesafiosQueryDto): Promise<DesafioDocument[]> {
+  async findAll(
+    filtro?: ListarDesafiosQueryDto,
+  ): Promise<PaginatedResponse<DesafioDocument>> {
     const filtroMongo: Record<string, unknown> = {};
 
     if (filtro?.estado) {
@@ -125,7 +144,27 @@ export class DesafiosService {
       filtroMongo.categoria = filtro.categoria;
     }
 
-    return this.desafioModel.find(filtroMongo).exec();
+    const page = filtro?.page ?? 1;
+    const limit = filtro?.limit ?? 10;
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      this.desafioModel
+        .find(filtroMongo)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .exec(),
+      this.desafioModel.countDocuments(filtroMongo).exec(),
+    ]);
+
+    return {
+      data,
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   /**
@@ -402,6 +441,150 @@ export class DesafiosService {
     ];
 
     return await desafio.save();
+  }
+
+  /**
+   * Retorna los participantes actuales de un desafío (quienes figuran en
+   * `participantes` y no en el historial `abandonados`).
+   */
+  private obtenerParticipantesActuales(
+    desafio: DesafioDocument,
+  ): Types.ObjectId[] {
+    const abandonados = new Set(
+      (desafio.abandonados ?? []).map((a) => a.toString()),
+    );
+    return desafio.participantes.filter(
+      (p) => !abandonados.has(p.toString()),
+    );
+  }
+
+  /**
+   * Arma el ranking de un desafío.
+   * Orden: puntos totales (desc), racha actual (desc), alias (asc).
+   * Solo incluye a quienes participan actualmente.
+   */
+  async obtenerRanking(
+    desafioId: string,
+  ): Promise<RankingItem[]> {
+    const desafio = await this.findOne(desafioId);
+    const hoyDesafio = getHoyDesafio();
+
+    const participantesActuales = this.obtenerParticipantesActuales(desafio);
+
+    const rankingPromesas = participantesActuales.map(async (personaId) => {
+      const personaIdStr = personaId.toString();
+      const persona = await this.personasService.findOne(personaIdStr);
+
+      const checkIns = await this.checkInsService.obtenerCheckInsDePersonaEnDesafio(desafioId, personaIdStr);
+      const fechas = checkIns.map((c) => c.fecha);
+      const zona = persona.zonaHoraria;
+      const hoyPersona =
+        zona && isValidTimeZone(zona)
+          ? getFechaCalendario(zona)
+          : hoyDesafio;
+      const ayerPersona = sumarDiasFechaCalendario(hoyPersona, -1);
+
+      const rachaActual = calcularRachaActual(
+        fechas,
+        hoyPersona,
+        ayerPersona,
+      );
+      const puntosTotales = checkIns.reduce(
+        (acc, c) => acc + (c.puntos ?? 0),
+        0,
+      );
+
+      return {
+        personaId: personaIdStr,
+        alias: persona.alias,
+        nombre: persona.nombre,
+        puntosTotales,
+        rachaActual,
+        checkIns: checkIns.length,
+      } as RankingItem;
+    });
+
+    const ranking = (await Promise.all(rankingPromesas)).sort(
+      (a, b) =>
+        b.puntosTotales - a.puntosTotales ||
+        b.rachaActual - a.rachaActual ||
+        a.alias.localeCompare(b.alias),
+    );
+
+    return ranking.map((item, index) => ({
+      ...item,
+      posicion: index + 1,
+    }));
+  }
+
+  /**
+   * Retorna el ganador de un desafío finalizado: quien quedó primero en el
+   * ranking. Si el desafío no está FINALIZADO o no hay ranking, retorna null.
+   */
+  async obtenerGanador(desafioId: string): Promise<RankingItem | null> {
+    const desafio = await this.findOne(desafioId);
+    const hoy = getHoyDesafio();
+    if (calcularEstadoDesafio(desafio, hoy) !== 'FINALIZADO') {
+      return null;
+    }
+
+    const ranking = await this.obtenerRanking(desafioId);
+    return ranking.length > 0 ? ranking[0] : null;
+  }
+
+  /**
+   * Resumen de inicio de una persona: sus desafíos vigentes, con su racha,
+   * su posición en el ranking de cada uno y si ya hizo el check-in de hoy.
+   */
+  async obtenerResumenInicio(
+    personaId: string,
+  ): Promise<ResumenInicioItem[]> {
+    // Valida que la persona exista.
+    await this.personasService.findOne(personaId);
+
+    const hoyDesafio = getHoyDesafio();
+    const desafiosVigentes = await this.desafioModel
+      .find(filtroDesafiosVigentesDePersona(personaId, hoyDesafio))
+      .exec();
+
+    const persona = await this.personasService.findOne(personaId);
+    const zonaPersona = persona.zonaHoraria;
+    const hoyPersona =
+      zonaPersona && isValidTimeZone(zonaPersona)
+        ? getFechaCalendario(zonaPersona)
+        : hoyDesafio;
+
+    const resumenPromesas = desafiosVigentes.map(async (desafio) => {
+      const desafioIdStr = desafio._id.toString();
+
+      const { rachaActual } = await this.checkInsService.obtenerRacha(
+        desafioIdStr,
+        personaId,
+      );
+
+      const ranking = await this.obtenerRanking(desafioIdStr);
+      const posicionEnRanking = ranking.findIndex(
+        (item) => item.personaId === personaId,
+      );
+      const posicion = posicionEnRanking === -1 ? null : posicionEnRanking + 1;
+
+      const checkIns = await this.checkInsService.obtenerCheckInsDePersonaEnDesafio(
+        desafioIdStr,
+        personaId,
+      );
+      const checkInHoy = checkIns.some((c) => c.fecha === hoyPersona);
+
+      return {
+        desafioId: desafioIdStr,
+        nombre: desafio.nombre,
+        estado: calcularEstadoDesafio(desafio, hoyDesafio),
+        rachaActual,
+        posicion,
+        checkInHoy,
+      } as ResumenInicioItem;
+    });
+
+    return Promise.all(resumenPromesas);
   }
 
   /**

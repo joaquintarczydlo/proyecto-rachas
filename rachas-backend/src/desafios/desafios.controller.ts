@@ -13,6 +13,7 @@ import { AbandonarDesafioDto } from './dto/abandonar-desafio.dto';
 import { CancelarDesafioDto } from './dto/cancelar-desafio.dto';
 import { CreateDesafioDto } from './dto/create-desafio.dto';
 import { ListarDesafiosQueryDto } from './dto/listar-desafios.query.dto';
+import { ResumenInicioQueryDto } from './dto/resumen-inicio.query.dto';
 import { UnirseDesafioDto } from './dto/unirse-desafio.dto';
 import { UpdateDesafioDto } from './dto/update-desafio.dto';
 import { DesafiosService } from './desafios.service';
@@ -30,7 +31,24 @@ export class DesafiosController {
   findAll(@Query() filtro: ListarDesafiosQueryDto) {
     return this.desafiosService.findAll(filtro);
   }
-  
+
+  // Las rutas con prefijo fijo deben ir antes de @Get(':id') para que
+  // 'ranking', 'ganador', 'resumen-inicio', etc. no se interpreten como un id.
+  @Get(':id/ranking')
+  ranking(@Param('id') id: string) {
+    return this.desafiosService.obtenerRanking(id);
+  }
+
+  @Get(':id/ganador')
+  ganador(@Param('id') id: string) {
+    return this.desafiosService.obtenerGanador(id);
+  }
+
+  @Get('resumen-inicio')
+  resumenInicio(@Query() filtro: ResumenInicioQueryDto) {
+    return this.desafiosService.obtenerResumenInicio(filtro.personaId);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.desafiosService.findOne(id);

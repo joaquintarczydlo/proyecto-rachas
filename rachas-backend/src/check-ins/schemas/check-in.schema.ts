@@ -47,6 +47,10 @@ export class CheckIn {
   /** Valor numérico opcional (minutos, kilómetros, páginas…). */
   @Prop()
   valor?: number;
+
+  /** Puntos otorgados por este check-in (base 10 + bono por racha). */
+  @Prop({ required: true, default: 0, min: 0 })
+  puntos: number;
 }
 
 export const CheckInSchema = SchemaFactory.createForClass(CheckIn);

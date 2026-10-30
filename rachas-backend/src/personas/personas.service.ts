@@ -13,56 +13,11 @@ import { UpdatePersonaDto } from './dto/update-persona.dto';
 import { getFechaCalendario } from './utils/date.utils';
 
 @Injectable()
-export class PersonasService implements OnApplicationBootstrap {
+export class PersonasService {
   constructor(
     @InjectModel(Persona.name)
     private readonly personaModel: Model<PersonaDocument>,
   ) {}
-
-  async onApplicationBootstrap(): Promise<void> {
-    await this.seedPersonas();
-  }
-
-  /**
-   * Precarga datos de prueba si no existen en la base de datos (mínimo 3 personas).
-   * Es idempotente para no duplicar datos si el servidor se reinicia.
-   */
-  private async seedPersonas(): Promise<void> {
-    const personasPrueba = [
-      {
-        nombre: 'Lucía Pérez',
-        alias: 'lucia_p',
-        email: 'lucia@ejemplo.com',
-        zonaHoraria: 'America/Argentina/Buenos_Aires',
-      },
-      {
-        nombre: 'Martín Gómez',
-        alias: 'martin_g',
-        email: 'martin@ejemplo.com',
-        zonaHoraria: 'America/Argentina/Buenos_Aires',
-      },
-      {
-        nombre: 'Sofía Rodríguez',
-        alias: 'sofia_r',
-        email: 'sofia@ejemplo.com',
-        zonaHoraria: 'America/Montevideo',
-      },
-    ];
-
-    for (const p of personasPrueba) {
-      const fechaCalendario = getFechaCalendario(p.zonaHoraria);
-      await this.personaModel.updateOne(
-        { $or: [{ email: p.email }, { alias: p.alias }] },
-        {
-          $setOnInsert: {
-            ...p,
-            fechaCalendario,
-          },
-        },
-        { upsert: true },
-      );
-    }
-  }
 
   /**
    * Crea una nueva persona registrando su fecha calendario según su zona horaria (sin UTC).
